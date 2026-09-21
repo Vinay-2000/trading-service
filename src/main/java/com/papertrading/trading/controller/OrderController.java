@@ -8,6 +8,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import org.openapitools.jackson.nullable.JsonNullable;
 
+import java.util.List;
+
 @RestController
 public class OrderController implements OrdersApi {
 
@@ -80,5 +82,20 @@ public class OrderController implements OrdersApi {
         response.setUpdatedAt(order.getUpdatedAt());
 
         return response;
+    }
+
+    @Override
+    public ResponseEntity<List<OrderResponse>> getUserOrders(
+            Long userId,
+            OrderStatus status,
+            String symbol) {
+
+        List<Order> orders = orderService.getOrdersByUser(userId, status,symbol);
+
+        List<OrderResponse> responses = orders.stream()
+                .map(this::toResponse)
+                .toList();
+
+        return ResponseEntity.ok(responses);
     }
 }

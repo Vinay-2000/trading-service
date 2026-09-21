@@ -1,13 +1,17 @@
 package com.papertrading.trading.service;
 
 import com.papertrading.trading.dao.OrderDao;
+import com.papertrading.trading.dao.PortfolioBalanceDao;
 import com.papertrading.trading.dao.TradeDao;
 import com.papertrading.trading.entity.Order;
 import com.papertrading.trading.entity.Trade;
+import com.papertrading.trading.exception.InsufficientBalanceException;
+import com.papertrading.trading.model.OrderStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Service
 public class OrderServiceImpl implements OrderService {
@@ -15,14 +19,17 @@ public class OrderServiceImpl implements OrderService {
     private final OrderDao orderDao;
     private final TradeDao tradeDao;
     private final MarketPriceService marketPriceService;
+    private final PortfolioBalanceDao portfolioBalanceDao;
 
     public OrderServiceImpl(
             OrderDao orderDao,
             TradeDao tradeDao,
-            MarketPriceService marketPriceService) {
+            MarketPriceService marketPriceService,
+            PortfolioBalanceDao portfolioBalanceDao) {
         this.orderDao = orderDao;
         this.tradeDao = tradeDao;
         this.marketPriceService = marketPriceService;
+        this.portfolioBalanceDao = portfolioBalanceDao;
     }
 
     @Override
@@ -68,6 +75,16 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal executionPrice =
                 marketPriceService.getLatestPrice(symbol);
         System.out.println("Current price for executionPrice "+symbol+": "+executionPrice);
+
+        BigDecimal tradeValue =
+                executionPrice.multiply(quantity);
+
+        BigDecimal cashBalance =
+                portfolioBalanceDao.getCashBalance(userId);
+
+        if (cashBalance.compareTo(tradeValue) < 0) {
+            throw new InsufficientBalanceException("Insufficient cash balance");
+        }
 
         Order order = new Order();
         order.setUserId(userId);
@@ -127,4 +144,50 @@ public class OrderServiceImpl implements OrderService {
                         )
                 );
     }
+    @Override
+    @Transactional(readOnly = true)
+    public List<Order> getOrdersByUser(
+            Long userId,
+            OrderStatus status,
+            String symbol) {
+
+        if (status != null && symbol != null) {
+            return orderDao.findByUserIdAndStatusAndSymbol(
+                    userId,
+                    status.toString(),
+                    symbol
+            );
+        }
+
+        if (status != null) {
+            return orderDao.findByUserIdAndStatus(
+                    userId,
+                    status.toString()
+            );
+        }
+
+        if (symbol != null) {
+            return orderDao.findByUserIdAndSymbol(
+                    userId,
+                    symbol
+            );
+        }
+
+        return orderDao.findByUserId(userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Trade> getTradesByOrder(Long orderId) {
+
+        // Make sure the order exists
+        orderDao.findById(orderId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Order not found: " + orderId
+                        ));
+
+        return tradeDao.findByOrderId(orderId);
+    }
+
 }
